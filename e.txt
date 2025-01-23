@@ -1,0 +1,181 @@
+use rodio::{Decoder, OutputStream, Sink};
+use std::fs::File;
+use std::io::{self, BufReader};
+use std::sync::mpsc;
+use std::thread;
+use tauri::State;
+use thiserror::Error;
+
+mod queue;
+
+/// Custom error type for the audio player
+#[derive(Error, Debug)]
+enum AudioError {
+    #[error("Failed to create audio output stream")]
+    StreamError(#[from] rodio::StreamError),
+
+    #[error("Failed to create audio sink")]
+    SinkError(#[from] rodio::PlayError),
+
+    #[error("I/O error: {0}")]
+    IoError(#[from] io::Error),
+
+    #[error("Failed to decode audio file")]
+    DecoderError(#[from] rodio::decoder::DecoderError),
+
+    #[error("Mutex lock error")]
+    LockError,
+}
+
+#[derive(Clone)]
+struct AudioPlayer {
+    sender: mpsc::Sender<AudioCommand>,
+}
+
+enum AudioCommand {
+    Queue(Vec<String>, bool),
+    Play(String),
+    Pause,
+    Resume,
+    Stop,
+    Prev,
+    Next,
+}
+
+impl AudioPlayer {
+    fn new() -> AudioPlayer {
+        let (sender, receiver) = mpsc::channel();
+
+        thread::spawn(move || {
+            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+            let sink = Sink::try_new(&stream_handle).unwrap();
+
+            loop {
+                if let Ok(command) = receiver.try_recv() {
+                    let _ = process_audio_command(command, &sink);
+                }
+
+                if !sink.is_paused() {
+                    println!("Waiting... {:?}", sink.get_pos().as_secs());
+                }
+
+                thread::sleep(std::time::Duration::from_millis(100));
+            }
+        });
+
+        AudioPlayer { sender: sender }
+    }
+}
+
+fn process_audio_command(command: AudioCommand, sink: &Sink) -> Result<(), AudioError> {
+    match command {
+        AudioCommand::Queue(queue, _looped) => {
+            sink.clear();
+
+            for path in queue {
+                let file = File::open(path)?;
+                let source = Decoder::new(BufReader::new(file))?;
+                sink.append(source);
+            }
+
+            sink.play();
+        }
+        AudioCommand::Play(path) => {
+            let file = File::open(path)?;
+            let source = Decoder::new(BufReader::new(file))?;
+            sink.clear();
+            sink.append(source);
+            sink.play();
+        }
+        AudioCommand::Pause => {
+            sink.pause();
+        }
+        AudioCommand::Resume => {
+            sink.play();
+        }
+        AudioCommand::Stop => {
+            sink.stop();
+        }
+        AudioCommand::Prev => {}
+        AudioCommand::Next => {
+            sink.skip_one();
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn play(state: State<AppState>, file_path: String) -> Result<(), String> {
+    match state
+        .audio_player
+        .sender
+        .send(AudioCommand::Play(file_path))
+    {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AudioError::LockError.to_string()),
+    }
+}
+
+#[tauri::command]
+fn play_queue(state: State<AppState>, file_paths: Vec<String>) -> Result<(), String> {
+    match state
+        .audio_player
+        .sender
+        .send(AudioCommand::Queue(file_paths, false))
+    {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AudioError::LockError.to_string()),
+    }
+}
+
+#[tauri::command]
+fn pause(state: State<AppState>) -> Result<(), String> {
+    match state.audio_player.sender.send(AudioCommand::Pause) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AudioError::LockError.to_string()),
+    }
+}
+
+#[tauri::command]
+fn resume(state: State<AppState>) -> Result<(), String> {
+    match state.audio_player.sender.send(AudioCommand::Resume) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AudioError::LockError.to_string()),
+    }
+}
+
+#[tauri::command]
+fn stop(state: State<AppState>) -> Result<(), String> {
+    match state.audio_player.sender.send(AudioCommand::Stop) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AudioError::LockError.to_string()),
+    }
+}
+
+#[tauri::command]
+fn next(state: State<AppState>) -> Result<(), String> {
+    match state.audio_player.sender.send(AudioCommand::Next) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(AudioError::LockError.to_string()),
+    }
+}
+
+struct AppState {
+    audio_player: AudioPlayer,
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(AppState {
+            audio_player: AudioPlayer::new(),
+        })
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            play, play_queue, pause, resume, stop, next
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

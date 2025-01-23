@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri Audio Player</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <p>Playing: <span id="track-name"></span></p>
+
+      <ol id="track-list"></ol>
+
+      <div style="display: flex; flex-direction: row; align-items: center; gap: 0.25rem">
+        <p id="track-position">0</p>
+        <input type="range" value="0" max="100" min="0" id="track-timeline" />
+        <p id="track-duration">0</p>
+      </div>
+
+      <div
+        style="
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          justify-content: space-around;
+          gap: 1rem;
+        "
+      >
+        <label for="">
+          <span>Looped</span>
+          <input type="checkbox" name="" id="track-looped" />
+        </label>
+
+        <label for="">
+          <span>Volume</span>
+          <input type="range" value="100" max="125" min="0" id="volume-slider" />
+        </label>
+      </div>
+
+      <div
+        style="
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          justify-content: space-around;
+          gap: 1rem;
+        "
+      >
+        <button id="play-queue-btn" type="button">Add Queue</button>
+        <button id="resume-btn" type="button">Resume</button>
+        <button id="pause-btn" type="button">Pause</button>
+        <button id="prev-btn" type="button">Previous</button>
+        <button id="next-btn" type="button">Next</button>
+      </div>
+    </main>
+  </body>
+</html>
