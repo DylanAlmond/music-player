@@ -39,7 +39,9 @@ pub struct AudioState {
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
-    Queue(Vec<String>, bool),
+    Queue(Vec<String>),
+    Clear,
+    Play(usize),
     Pause,
     Resume,
     Prev,
@@ -52,6 +54,7 @@ pub enum AudioCommand {
 
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct TrackInfo {
+    pub index: usize,
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -161,19 +164,24 @@ impl AudioPlayer {
 
     fn handle_audio_command(command: AudioCommand, state: &mut AudioState, sink: &Sink) {
         match command {
-            AudioCommand::Queue(file_paths, _looped) => {
-                state.queue.clear();
+            AudioCommand::Queue(file_paths) => {
+                // state.queue.clear();
+
+                let mut i: usize = state.queue.len();
                 for path in file_paths {
-                    let track_info = get_track_info_from_path(&path);
+                    let track_info = get_track_info_from_path(&path, i);
                     state.queue.push(track_info);
+                    i += 1;
                 }
 
-                state.current_index = 0;
-
-                if let Err(e) = play_track(&state.queue[state.current_index].clone(), &sink, state)
-                {
+                // state.current_index = 0;
+            }
+            AudioCommand::Play(index) => {
+                if let Err(e) = play_track(&state.queue[index].clone(), &sink, state) {
                     eprintln!("Error playing track: {}", e);
                 }
+
+                state.current_index = index;
             }
             AudioCommand::Prev => {
                 if state.current_index > 0 && sink.get_pos().as_secs() < 5 {
@@ -207,11 +215,21 @@ impl AudioPlayer {
                     .unwrap();
             }
             AudioCommand::Resume => {
-                sink.play();
-                state
-                    .controls
-                    .set_playback(MediaPlayback::Playing { progress: None })
-                    .unwrap();
+                if sink.empty() {
+                    if let Err(e) = play_track(&state.queue[0].clone(), &sink, state) {
+                        eprintln!("Error playing track: {}", e);
+                    }
+                    state
+                        .controls
+                        .set_playback(MediaPlayback::Playing { progress: None })
+                        .unwrap();
+                } else {
+                    sink.play();
+                    state
+                        .controls
+                        .set_playback(MediaPlayback::Playing { progress: None })
+                        .unwrap();
+                }
             }
             AudioCommand::SetPosition(position) => {
                 println!("Seeking to: {}", position);
@@ -229,6 +247,13 @@ impl AudioPlayer {
             }
             AudioCommand::GetQueue(response_tx) => {
                 let _ = response_tx.send(state.queue.clone());
+            }
+            AudioCommand::Clear => {
+                sink.stop();
+                state.queue.clear();
+                state.current_index = 0;
+
+                state.controls.set_playback(MediaPlayback::Stopped).unwrap();
             }
         }
     }
@@ -275,12 +300,26 @@ impl AudioPlayer {
         }
     }
 
-    pub fn play_queue(&self, file_paths: Vec<String>) -> Result<Vec<TrackInfo>, String> {
-        match self.sender.send(AudioCommand::Queue(file_paths, false)) {
+    pub fn add_queue(&self, file_paths: Vec<String>) -> Result<Vec<TrackInfo>, String> {
+        match self.sender.send(AudioCommand::Queue(file_paths)) {
             Ok(_) => {
                 let queue = self.get_queue();
                 Ok(queue)
             }
+            Err(_) => Err(AudioError::LockError.to_string()),
+        }
+    }
+
+    pub fn clear_queue(&self) -> Result<(), String> {
+        match self.sender.send(AudioCommand::Clear) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(AudioError::LockError.to_string()),
+        }
+    }
+
+    pub fn play(&self, index: usize) -> Result<(), String> {
+        match self.sender.send(AudioCommand::Play(index)) {
+            Ok(_) => Ok(()),
             Err(_) => Err(AudioError::LockError.to_string()),
         }
     }

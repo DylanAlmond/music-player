@@ -13,9 +13,10 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "music-player",
-        "width": 800,
-        "height": 600
+        "title": "Music Player",
+        "width": 360,
+        "height": 400,
+        "decorations": false
       }
     ],
     "security": {

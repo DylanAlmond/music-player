@@ -8,53 +8,61 @@
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
-  <body>
-    <main class="container">
-      <p>Playing: <span id="track-name"></span></p>
+  <body class="window">
+    <div data-tauri-drag-region class="title-bar">
+      <div class="title-bar-text">Music Player</div>
 
-      <ol id="track-list"></ol>
+      <div class="title-bar-controls">
+        <button id="title-bar-minimize" aria-label="Minimize"></button>
+        <button id="title-bar-maximize" aria-label="Maximize"></button>
+        <button id="title-bar-close" aria-label="Close"></button>
+      </div>
+    </div>
 
-      <div style="display: flex; flex-direction: row; align-items: center; gap: 0.25rem">
-        <p id="track-position">0</p>
-        <input type="range" value="0" max="100" min="0" id="track-timeline" />
-        <p id="track-duration">0</p>
+    <main class="window-body">
+      <div class="sunken-panel">
+        <table id="track-table" class="interactive">
+          <thead>
+            <tr>
+              <th>Track</th>
+              <th>Artist</th>
+              <th>Album</th>
+              <th>Duration</th>
+            </tr>
+          </thead>
+          <tbody id="track-list"></tbody>
+        </table>
       </div>
 
-      <div
-        style="
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          justify-content: space-around;
-          gap: 1rem;
-        "
-      >
-        <label for="">
-          <span>Looped</span>
-          <input type="checkbox" name="" id="track-looped" />
-        </label>
+      <div class="controls">
+        <button id="add-queue-btn" type="button">Add</button>
+        <button id="clear-queue-btn" type="button">Clear</button>
+      </div>
 
-        <label for="">
+      <input type="range" value="0" max="100" min="0" id="track-timeline" />
+
+      <div class="controls">
+        <button id="prev-btn" type="button">Previous</button>
+        <button id="resume-btn" type="button">Resume</button>
+        <button id="pause-btn" type="button">Pause</button>
+        <button id="next-btn" type="button">Next</button>
+      </div>
+
+      <div class="controls">
+        <input type="checkbox" id="track-looped" />
+        <label for="track-looped">Looped</label>
+
+        <label for="volume-slider">
           <span>Volume</span>
           <input type="range" value="100" max="125" min="0" id="volume-slider" />
         </label>
       </div>
-
-      <div
-        style="
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          justify-content: space-around;
-          gap: 1rem;
-        "
-      >
-        <button id="play-queue-btn" type="button">Add Queue</button>
-        <button id="resume-btn" type="button">Resume</button>
-        <button id="pause-btn" type="button">Pause</button>
-        <button id="prev-btn" type="button">Previous</button>
-        <button id="next-btn" type="button">Next</button>
-      </div>
     </main>
+
+    <div class="status-bar">
+      <p class="status-bar-field">
+        <span id="track-position"></span> / <span id="track-duration"></span>
+      </p>
+    </div>
   </body>
 </html>

@@ -6,8 +6,18 @@ mod util;
 use audio_player::{AudioPlayer, TrackInfo};
 
 #[tauri::command]
-fn play_queue(state: State<AppState>, file_paths: Vec<String>) -> Result<Vec<TrackInfo>, String> {
-    state.audio_player.play_queue(file_paths)
+fn add_queue(state: State<AppState>, file_paths: Vec<String>) -> Result<Vec<TrackInfo>, String> {
+    state.audio_player.add_queue(file_paths)
+}
+
+#[tauri::command]
+fn clear_queue(state: State<AppState>) -> Result<(), String> {
+    state.audio_player.clear_queue()
+}
+
+#[tauri::command]
+fn play(state: State<AppState>, index: usize) -> Result<(), String> {
+    state.audio_player.play(index)
 }
 
 #[tauri::command]
@@ -64,7 +74,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            play_queue,
+            add_queue,
+            clear_queue,
+            play,
             pause,
             resume,
             prev,

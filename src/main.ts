@@ -1,23 +1,27 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
+import '98.css';
 
-let trackName: HTMLSpanElement | null;
+import './window';
+import { formatTime } from './util';
+
 let trackDuration: HTMLParagraphElement | null;
 let trackPosition: HTMLParagraphElement | null;
 let trackProgress: HTMLInputElement | null;
 let trackLooped: HTMLInputElement | null;
 let volumeSlider: HTMLInputElement | null;
+let trackList: HTMLTableSectionElement | null;
 
-let trackList: HTMLOListElement | null;
-
-let playQueueButton: HTMLButtonElement | null;
+let addQueueButton: HTMLButtonElement | null;
+let clearQueueButton: HTMLButtonElement | null;
 let resumeButton: HTMLButtonElement | null;
 let pauseButton: HTMLButtonElement | null;
 let nextButton: HTMLButtonElement | null;
 let prevButton: HTMLButtonElement | null;
 
 type TrackInfo = {
+  index: number;
   title: string;
   album: string;
   artist: string;
@@ -34,109 +38,91 @@ let queue: TrackInfo[] = [];
 function renderQueue() {
   trackList!.innerHTML = '';
   queue.forEach((track) => {
-    const li = document.createElement('li');
-    li.textContent = `${track.title} - ${track.album} - ${track.artist} - ${track.duration}`;
-    li.dataset.title = track.title;
+    const tr = document.createElement('tr');
+    tr.dataset.index = track.index.toString();
 
-    trackList!.appendChild(li);
+    tr.innerHTML = `
+      <td>${track.title}</td>
+      <td>${track.artist}</td>
+      <td>${track.album}</td>
+      <td>${formatTime(track.duration)}</td>
+    `;
+
+    tr.addEventListener('click', () => {
+      document.querySelectorAll('.highlighted').forEach((e) => e.classList.remove('highlighted'));
+      tr.classList.add('highlighted');
+    });
+
+    tr.addEventListener('dblclick', () => {
+      invoke('play', { index: track.index });
+    });
+
+    trackList!.appendChild(tr);
   });
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-  trackName = document.getElementById('track-name') as HTMLSpanElement;
-  trackDuration = document.getElementById('track-duration') as HTMLParagraphElement;
-  trackPosition = document.getElementById('track-position') as HTMLParagraphElement;
-  trackProgress = document.getElementById('track-timeline') as HTMLInputElement;
-  trackLooped = document.getElementById('track-looped') as HTMLInputElement;
-  volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
-
-  trackList = document.getElementById('track-list') as HTMLOListElement;
-
-  playQueueButton = document.getElementById('play-queue-btn') as HTMLButtonElement;
-  resumeButton = document.getElementById('resume-btn') as HTMLButtonElement;
-  pauseButton = document.getElementById('pause-btn') as HTMLButtonElement;
-  nextButton = document.getElementById('next-btn') as HTMLButtonElement;
-  prevButton = document.getElementById('prev-btn') as HTMLButtonElement;
-
-  playQueueButton.addEventListener('click', async () => {
-    const path = await open({
-      multiple: true
-    });
-
+function addDOMEventListeners() {
+  addQueueButton!.addEventListener('click', async () => {
+    const path = await open({ multiple: true });
     if (path) {
-      const res: TrackInfo[] = await invoke('play_queue', { filePaths: path });
+      const res: TrackInfo[] = await invoke('add_queue', { filePaths: path });
       queue = res;
       renderQueue();
     }
   });
 
-  // Resume audio playback
-  resumeButton.addEventListener('click', async () => {
-    await invoke('resume');
+  clearQueueButton!.addEventListener('click', () => {
+    invoke('clear_queue');
+    queue = [];
+    renderQueue();
   });
+  resumeButton!.addEventListener('click', () => invoke('resume'));
+  pauseButton!.addEventListener('click', () => invoke('pause'));
+  prevButton!.addEventListener('click', () => invoke('prev'));
+  nextButton!.addEventListener('click', () => invoke('next'));
 
-  // Pause audio playback
-  pauseButton.addEventListener('click', async () => {
-    await invoke('pause');
-  });
+  trackLooped!.addEventListener('input', () =>
+    invoke('set_looped', { looped: trackLooped!.checked })
+  );
+  volumeSlider!.addEventListener('input', () =>
+    invoke('set_volume', { volume: volumeSlider!.valueAsNumber / 100 })
+  );
+  trackProgress!.addEventListener('change', () =>
+    invoke('set_position', { position: trackProgress!.valueAsNumber })
+  );
+}
 
-  // Play the previous audio file
-  prevButton.addEventListener('click', () => {
-    invoke('prev');
-  });
-
-  // Play the next audio file
-  nextButton.addEventListener('click', () => {
-    invoke('next');
-  });
-
-  trackLooped.addEventListener('input', () => {
-    invoke('set_looped', { looped: trackLooped!.checked });
-  });
-
-  volumeSlider.addEventListener('input', () => {
-    let v = volumeSlider!.valueAsNumber / 100;
-    console.log(volumeSlider!.valueAsNumber, v);
-
-    invoke('set_volume', { volume: v });
-  });
-
+function addTauriListeners() {
   listen<TrackInfo>('track-change', (event) => {
-    const playing = document.querySelectorAll('.playing');
-    playing.forEach((e) => {
-      e.classList.remove('playing');
-    });
-
-    console.log(`Track changed:`, event.payload);
-    trackName!.textContent = `${event.payload.title} | ${event.payload.album} | ${
-      event.payload.artist
-    } | ${formatTime(event.payload.duration)}`;
-
-    const elem =
-      (document.querySelector(`[data-title="${event.payload.title}"]`) as HTMLLIElement) || null;
-    if (elem) {
-      elem.classList.add('playing');
-    }
-  });
-
-  function formatTime(position: number): string {
-    const minutes = Math.floor(position / 60);
-    const seconds = Math.floor(position % 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  trackProgress.addEventListener('change', () => {
-    console.log(`Setting Position: ${trackProgress!.valueAsNumber}`);
-    invoke('set_position', { position: trackProgress!.valueAsNumber });
+    document.querySelectorAll('.playing').forEach((e) => e.classList.remove('playing'));
+    const elem = document.querySelector(`[data-index="${event.payload.index}"]`) as HTMLLIElement;
+    if (elem) elem.classList.add('playing');
   });
 
   listen<TrackProgress>('track-progress', (event) => {
-    console.log(`Track Progress:`, event.payload);
-
+    console.log('Track Progress:', event.payload);
     trackProgress!.value = event.payload.position.toString();
     trackProgress!.max = event.payload.duration.toString();
-
     trackPosition!.textContent = formatTime(event.payload.position);
     trackDuration!.textContent = formatTime(event.payload.duration);
   });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  trackDuration = document.getElementById('track-duration') as HTMLParagraphElement;
+  trackPosition = document.getElementById('track-position') as HTMLParagraphElement;
+  trackProgress = document.getElementById('track-timeline') as HTMLInputElement;
+  trackLooped = document.getElementById('track-looped') as HTMLInputElement;
+  volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
+  trackList = document.getElementById('track-list') as HTMLTableSectionElement;
+
+  addQueueButton = document.getElementById('add-queue-btn') as HTMLButtonElement;
+  clearQueueButton = document.getElementById('clear-queue-btn') as HTMLButtonElement;
+  resumeButton = document.getElementById('resume-btn') as HTMLButtonElement;
+  pauseButton = document.getElementById('pause-btn') as HTMLButtonElement;
+  nextButton = document.getElementById('next-btn') as HTMLButtonElement;
+  prevButton = document.getElementById('prev-btn') as HTMLButtonElement;
+
+  addDOMEventListeners();
+  addTauriListeners();
 });

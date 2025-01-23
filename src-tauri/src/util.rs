@@ -3,15 +3,15 @@ use lofty::read_from_path;
 use lofty::tag::Accessor;
 use rodio::{Decoder, Sink};
 use souvlaki::{MediaMetadata, MediaPlayback};
-use tauri::Emitter;
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Duration;
+use tauri::Emitter;
 
 use crate::audio_player;
 use audio_player::{AudioError, AudioState, TrackInfo};
 
-pub fn get_track_info_from_path(path: &str) -> TrackInfo {
+pub fn get_track_info_from_path(path: &str, index: usize) -> TrackInfo {
     if let Ok(tagged_file) = read_from_path(path) {
         let tag = tagged_file.primary_tag();
         let title = tag
@@ -27,6 +27,7 @@ pub fn get_track_info_from_path(path: &str) -> TrackInfo {
         let duration = tagged_file.properties().duration().as_secs();
 
         TrackInfo {
+            index: index,
             title: title,
             album: album,
             artist: artist,
@@ -35,6 +36,7 @@ pub fn get_track_info_from_path(path: &str) -> TrackInfo {
         }
     } else {
         TrackInfo {
+            index: index,
             title: "Unknown Track".to_string(),
             album: "Unknown Album".to_string(),
             artist: "Unknown Artist".to_string(),
