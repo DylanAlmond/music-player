@@ -10,7 +10,10 @@
 
   <body class="window">
     <div data-tauri-drag-region class="title-bar">
-      <div class="title-bar-text">Music Player</div>
+      <div id="title-bar-label">
+        <img src="icon.png" id="title-bar-icon" alt="" />
+        <div id="title-bar-text" class="title-bar-text"></div>
+      </div>
 
       <div class="title-bar-controls">
         <button id="title-bar-minimize" aria-label="Minimize"></button>
@@ -20,7 +23,7 @@
     </div>
 
     <main class="window-body">
-      <div class="sunken-panel">
+      <div id="table-panel" class="sunken-panel">
         <table id="track-table" class="interactive">
           <thead>
             <tr>
@@ -35,33 +38,46 @@
       </div>
 
       <div class="controls">
+        <div class="sunken-panel" id="track-time-panel">
+          <p id="track-time">
+            <span id="track-position"></span> / <span id="track-duration"></span>
+          </p>
+        </div>
         <button id="add-queue-btn" type="button">Add</button>
         <button id="clear-queue-btn" type="button">Clear</button>
       </div>
 
       <input type="range" value="0" max="100" min="0" id="track-timeline" />
 
-      <div class="controls">
-        <button id="prev-btn" type="button">Previous</button>
-        <button id="resume-btn" type="button">Resume</button>
-        <button id="pause-btn" type="button">Pause</button>
-        <button id="next-btn" type="button">Next</button>
+      <div id="audio-controls">
+        <button id="prev-btn" class="audio-control" type="button">
+          <img class="button-icon" src="icon/back.png" />
+        </button>
+        <button id="resume-btn" type="button">
+          <img class="button-icon" src="icon/play.png" />
+        </button>
+        <button id="pause-btn" class="audio-control" type="button">
+          <img class="button-icon" src="icon/pause.png" />
+        </button>
+        <button id="next-btn" class="audio-control" type="button">
+          <img class="button-icon" src="icon/next.png" />
+        </button>
+
+        <label for="volume-slider" style="margin-left: auto">
+          <img src="icon/loudspeaker_rays-0.png" width="24" height="24" />
+          <input type="range" value="100" max="125" min="0" id="volume-slider" />
+        </label>
       </div>
 
       <div class="controls">
         <input type="checkbox" id="track-looped" />
         <label for="track-looped">Looped</label>
-
-        <label for="volume-slider">
-          <span>Volume</span>
-          <input type="range" value="100" max="125" min="0" id="volume-slider" />
-        </label>
       </div>
     </main>
 
     <div class="status-bar">
       <p class="status-bar-field">
-        <span id="track-position"></span> / <span id="track-duration"></span>
+        <span id="app-version"></span>
       </p>
     </div>
   </body>

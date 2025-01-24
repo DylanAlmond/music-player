@@ -5,6 +5,7 @@ import '98.css';
 
 import './window';
 import { formatTime } from './util';
+import { initWindow } from './window';
 
 let trackDuration: HTMLParagraphElement | null;
 let trackPosition: HTMLParagraphElement | null;
@@ -123,6 +124,7 @@ window.addEventListener('DOMContentLoaded', () => {
   nextButton = document.getElementById('next-btn') as HTMLButtonElement;
   prevButton = document.getElementById('prev-btn') as HTMLButtonElement;
 
+  initWindow();
   addDOMEventListeners();
   addTauriListeners();
 });
