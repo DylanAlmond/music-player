@@ -3,10 +3,10 @@ use tauri::{Manager, State};
 
 mod audio_player;
 mod util;
-use audio_player::{AudioPlayer, TrackInfo};
+use audio_player::AudioPlayer;
 
 #[tauri::command]
-fn add_queue(state: State<AppState>, file_paths: Vec<String>) -> Result<Vec<TrackInfo>, String> {
+fn add_queue(state: State<AppState>, file_paths: Vec<String>) -> Result<(), String> {
     state.audio_player.add_queue(file_paths)
 }
 

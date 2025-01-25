@@ -35,6 +35,7 @@ pub struct AudioState {
     pub looped: bool,
     pub handle: AppHandle,
     pub controls: MediaControls,
+    pub sender: mpsc::Sender<AudioCommand>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +50,24 @@ pub enum AudioCommand {
     SetPosition(u64),
     SetLooped(bool),
     SetVolume(f32),
-    GetQueue(mpsc::Sender<Vec<TrackInfo>>),
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(tag = "type", content = "data")]
+enum CommandResponse {
+    Queue(Vec<TrackInfo>),
+    Play { index: usize, track: TrackInfo },
+    Status(String),
+    Position(u64),
+    Looped(bool),
+    Volume(f32),
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct Callback<T> {
+    success: bool,
+    data: Option<T>,
+    error: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -100,6 +118,7 @@ impl AudioPlayer {
                 looped: false,
                 handle: app_handle.clone(),
                 controls: controls,
+                sender: sender,
             };
 
             let mut last_emit_time = std::time::Instant::now();
@@ -107,16 +126,19 @@ impl AudioPlayer {
 
             loop {
                 if let Ok(command) = receiver.try_recv() {
+                    println!("Handling audio command...");
                     Self::handle_audio_command(command, &mut state, &sink);
                 }
 
-                Self::track_progress(
-                    &sink,
-                    &mut state,
-                    &app_handle,
-                    &mut last_emit_time,
-                    emit_interval,
-                );
+                if !sink.empty() && !sink.is_paused() {
+                    Self::track_progress(
+                        &sink,
+                        &mut state,
+                        &app_handle,
+                        &mut last_emit_time,
+                        emit_interval,
+                    );
+                }
 
                 thread::sleep(Duration::from_millis(10));
             }
@@ -163,10 +185,8 @@ impl AudioPlayer {
     }
 
     fn handle_audio_command(command: AudioCommand, state: &mut AudioState, sink: &Sink) {
-        match command {
+        let (event_name, result): (&str, Result<CommandResponse, String>) = match command {
             AudioCommand::Queue(file_paths) => {
-                // state.queue.clear();
-
                 let mut i: usize = state.queue.len();
                 for path in file_paths {
                     let track_info = get_track_info_from_path(&path, i);
@@ -174,79 +194,134 @@ impl AudioPlayer {
                     i += 1;
                 }
 
-                // state.current_index = 0;
+                ("queue", Ok(CommandResponse::Queue(state.queue.clone())))
             }
             AudioCommand::Play(index) => {
-                if let Err(e) = play_track(&state.queue[index].clone(), &sink, state) {
-                    eprintln!("Error playing track: {}", e);
+                match play_track(&state.queue[index].clone(), &sink, state) {
+                    Ok(_) => {
+                        state.current_index = index;
+                        (
+                            "play",
+                            Ok(CommandResponse::Play {
+                                index,
+                                track: state.queue[index].clone(),
+                            }),
+                        )
+                    }
+                    Err(e) => ("play", Err(e.to_string())),
                 }
-
-                state.current_index = index;
             }
             AudioCommand::Prev => {
-                if state.current_index > 0 && sink.get_pos().as_secs() < 5 {
-                    state.current_index -= 1;
-                    if let Err(e) =
-                        play_track(&state.queue[state.current_index].clone(), &sink, state)
-                    {
-                        eprintln!("Error playing track: {}", e);
-                    }
+                let track = if state.queue.is_empty() {
+                    Err("queue is empty".to_string())
                 } else {
-                    if let Err(e) = sink.try_seek(Duration::from_secs(0)) {
-                        eprintln!("Error playing track: {}", e);
+                    if state.current_index > 0 && sink.get_pos().as_secs() < 5 {
+                        state.current_index -= 1;
+                        Ok(state.queue[state.current_index].clone())
+                    } else {
+                        Ok(state.queue[state.current_index].clone())
                     }
+                };
+
+                match track {
+                    Ok(t) => match play_track(&t, &sink, state) {
+                        Ok(_) => (
+                            "play",
+                            Ok(CommandResponse::Play {
+                                index: state.current_index,
+                                track: t,
+                            }),
+                        ),
+                        Err(e) => ("play", Err(e.to_string())),
+                    },
+                    Err(e) => ("play", Err(e)),
                 }
             }
             AudioCommand::Next => {
-                if state.current_index < state.queue.len() - 1 {
-                    state.current_index += 1;
-                    if let Err(e) =
-                        play_track(&state.queue[state.current_index].clone(), &sink, state)
-                    {
-                        eprintln!("Error playing track: {}", e);
+                let track = if state.queue.is_empty() {
+                    Err("queue is empty".to_string())
+                } else {
+                    if state.current_index < state.queue.len() - 1 {
+                        state.current_index += 1;
+                        Ok(state.queue[state.current_index].clone())
+                    } else {
+                        if state.looped {
+                            state.current_index = 0;
+                            Ok(state.queue[state.current_index].clone())
+                        } else {
+                            Err("next index out of bounds".to_string())
+                        }
                     }
+                };
+
+                match track {
+                    Ok(t) => match play_track(&t, &sink, state) {
+                        Ok(_) => (
+                            "play",
+                            Ok(CommandResponse::Play {
+                                index: state.current_index,
+                                track: t,
+                            }),
+                        ),
+                        Err(e) => ("play", Err(e.to_string())),
+                    },
+                    Err(e) => ("play", Err(e)),
                 }
             }
             AudioCommand::Pause => {
                 sink.pause();
+
                 state
                     .controls
                     .set_playback(MediaPlayback::Paused { progress: None })
                     .unwrap();
+                ("status", Ok(CommandResponse::Status("paused".to_string())))
             }
             AudioCommand::Resume => {
-                if sink.empty() {
-                    if let Err(e) = play_track(&state.queue[0].clone(), &sink, state) {
-                        eprintln!("Error playing track: {}", e);
-                    }
-                    state
-                        .controls
-                        .set_playback(MediaPlayback::Playing { progress: None })
-                        .unwrap();
+                if state.queue.is_empty() {
+                    ("play", Err("Queue is empty".to_string()))
                 } else {
-                    sink.play();
-                    state
-                        .controls
-                        .set_playback(MediaPlayback::Playing { progress: None })
-                        .unwrap();
+                    let playback_result = if sink.empty() {
+                        match play_track(&state.queue[0].clone(), &sink, state) {
+                            Ok(_) => Ok(CommandResponse::Play {
+                                index: 0,
+                                track: state.queue[0].clone(),
+                            }),
+                            Err(e) => Err(e.to_string()),
+                        }
+                    } else {
+                        sink.play();
+
+                        state
+                            .controls
+                            .set_playback(MediaPlayback::Playing { progress: None })
+                            .unwrap();
+
+                        Ok(CommandResponse::Play {
+                            index: state.current_index,
+                            track: state.queue[state.current_index].clone(),
+                        })
+                    };
+
+                    ("play", playback_result)
                 }
             }
             AudioCommand::SetPosition(position) => {
-                println!("Seeking to: {}", position);
-                if let Err(e) = sink.try_seek(Duration::from_secs(position)) {
-                    eprintln!("Error playing track: {}", e);
+                match sink.try_seek(Duration::from_secs(position)) {
+                    Ok(_) => (
+                        "position",
+                        Ok(CommandResponse::Position(sink.get_pos().as_secs())),
+                    ),
+                    Err(e) => ("position", Err(e.to_string())),
                 }
             }
             AudioCommand::SetLooped(looped) => {
-                println!("Setting looping: {}", looped);
                 state.looped = looped;
+                ("looped", Ok(CommandResponse::Looped(state.looped)))
             }
             AudioCommand::SetVolume(volume) => {
-                println!("Setting volume: {}", volume);
                 sink.set_volume(volume);
-            }
-            AudioCommand::GetQueue(response_tx) => {
-                let _ = response_tx.send(state.queue.clone());
+                ("volume", Ok(CommandResponse::Volume(sink.volume())))
             }
             AudioCommand::Clear => {
                 sink.stop();
@@ -254,7 +329,32 @@ impl AudioPlayer {
                 state.current_index = 0;
 
                 state.controls.set_playback(MediaPlayback::Stopped).unwrap();
+
+                ("queue", Ok(CommandResponse::Queue(state.queue.clone())))
             }
+        };
+
+        let emit_result = match result {
+            Ok(data) => state.handle.emit(
+                event_name,
+                Callback {
+                    success: true,
+                    data: Some(data),
+                    error: None,
+                },
+            ),
+            Err(err) => state.handle.emit(
+                event_name,
+                Callback::<CommandResponse> {
+                    success: false,
+                    data: None,
+                    error: Some(err),
+                },
+            ),
+        };
+
+        if let Err(e) = emit_result {
+            eprintln!("Failed to emit event: {}", e);
         }
     }
 
@@ -265,25 +365,22 @@ impl AudioPlayer {
         last_emit_time: &mut std::time::Instant,
         interval: Duration,
     ) {
-        if !sink.empty() && sink.get_pos().as_secs() >= state.duration.unwrap_or(0) {
-            let next_index = if state.current_index < state.queue.len() - 1 {
-                state.current_index + 1
-            } else if state.looped {
-                0
+        if sink.get_pos().as_secs() >= state.duration.unwrap_or(0) {
+            if state.queue.is_empty() {
+                //
             } else {
-                sink.pause();
-                state
-                    .controls
-                    .set_playback(MediaPlayback::Paused { progress: None })
-                    .unwrap();
-                return;
+                if state.current_index < state.queue.len() - 1 {
+                    state.current_index += 1;
+                    let _ = state.sender.send(AudioCommand::Play(state.current_index));
+                } else {
+                    if state.looped {
+                        state.current_index = 0;
+                        let _ = state.sender.send(AudioCommand::Play(state.current_index));
+                    } else {
+                        let _ = state.sender.send(AudioCommand::Pause);
+                    }
+                }
             };
-
-            state.current_index = next_index;
-
-            if let Err(e) = play_track(&state.queue[state.current_index].clone(), sink, state) {
-                eprintln!("Error playing next track: {}", e);
-            }
         }
 
         if !sink.is_paused() && !sink.empty() && last_emit_time.elapsed() >= interval {
@@ -300,12 +397,9 @@ impl AudioPlayer {
         }
     }
 
-    pub fn add_queue(&self, file_paths: Vec<String>) -> Result<Vec<TrackInfo>, String> {
+    pub fn add_queue(&self, file_paths: Vec<String>) -> Result<(), String> {
         match self.sender.send(AudioCommand::Queue(file_paths)) {
-            Ok(_) => {
-                let queue = self.get_queue();
-                Ok(queue)
-            }
+            Ok(_) => Ok(()),
             Err(_) => Err(AudioError::LockError.to_string()),
         }
     }
@@ -370,15 +464,6 @@ impl AudioPlayer {
         match self.sender.send(AudioCommand::SetVolume(volume)) {
             Ok(_) => Ok(()),
             Err(_) => Err(AudioError::LockError.to_string()),
-        }
-    }
-
-    pub fn get_queue(&self) -> Vec<TrackInfo> {
-        let (resp_tx, resp_rx) = mpsc::channel();
-        if self.sender.send(AudioCommand::GetQueue(resp_tx)).is_ok() {
-            resp_rx.recv().unwrap_or_else(|_| Vec::new())
-        } else {
-            Vec::new()
         }
     }
 }

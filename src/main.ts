@@ -3,7 +3,6 @@ import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import '98.css';
 
-import './window';
 import { formatTime } from './util';
 import { initWindow } from './window';
 
@@ -34,48 +33,88 @@ type TrackProgress = {
   duration: number;
 };
 
+type EventPayload<T> = {
+  success: boolean;
+  data: { type: string; data: T };
+  error: string | null;
+};
+
 let queue: TrackInfo[] = [];
+let currentTrack: TrackInfo | null = null;
 
 function renderQueue() {
   trackList!.innerHTML = '';
-  queue.forEach((track) => {
-    const tr = document.createElement('tr');
-    tr.dataset.index = track.index.toString();
 
-    tr.innerHTML = `
-      <td>${track.title}</td>
-      <td>${track.artist}</td>
-      <td>${track.album}</td>
-      <td>${formatTime(track.duration)}</td>
-    `;
+  if (queue.length === 0) {
+    pauseButton!.disabled = true;
+    resumeButton!.disabled = true;
+    nextButton!.disabled = true;
+    prevButton!.disabled = true;
+    trackProgress!.disabled = true;
+    volumeSlider!.disabled = true;
+    trackLooped!.disabled = true;
 
-    tr.addEventListener('click', () => {
-      document.querySelectorAll('.highlighted').forEach((e) => e.classList.remove('highlighted'));
-      tr.classList.add('highlighted');
+    trackPosition!.textContent = '0:00';
+    trackDuration!.textContent = '0:00';
+    trackProgress!.value = '0';
+  } else {
+    pauseButton!.disabled = false;
+    resumeButton!.disabled = false;
+    nextButton!.disabled = false;
+    prevButton!.disabled = false;
+    trackProgress!.disabled = false;
+    volumeSlider!.disabled = false;
+    trackLooped!.disabled = false;
+
+    queue.forEach((track) => {
+      const tr = document.createElement('tr');
+      tr.dataset.index = track.index.toString();
+
+      tr.innerHTML = `
+        <td>${track.title}</td>
+        <td>${track.artist}</td>
+        <td>${track.album}</td>
+        <td>${formatTime(track.duration)}</td>
+      `;
+
+      tr.addEventListener('click', () => {
+        document.querySelectorAll('.highlighted').forEach((e) => e.classList.remove('highlighted'));
+        tr.classList.add('highlighted');
+      });
+
+      tr.addEventListener('dblclick', () => {
+        invoke('play', { index: track.index });
+      });
+
+      console.log(track.index, currentTrack);
+
+      if (track.index === currentTrack?.index) {
+        tr.classList.add('playing');
+      }
+
+      trackList!.appendChild(tr);
     });
-
-    tr.addEventListener('dblclick', () => {
-      invoke('play', { index: track.index });
-    });
-
-    trackList!.appendChild(tr);
-  });
+  }
 }
 
 function addDOMEventListeners() {
   addQueueButton!.addEventListener('click', async () => {
-    const path = await open({ multiple: true });
+    const path = await open({
+      multiple: true,
+      filters: [
+        {
+          name: 'Audio File',
+          extensions: ['mp3', 'flac']
+        }
+      ]
+    });
     if (path) {
-      const res: TrackInfo[] = await invoke('add_queue', { filePaths: path });
-      queue = res;
-      renderQueue();
+      await invoke('add_queue', { filePaths: path });
     }
   });
 
   clearQueueButton!.addEventListener('click', () => {
     invoke('clear_queue');
-    queue = [];
-    renderQueue();
   });
   resumeButton!.addEventListener('click', () => invoke('resume'));
   pauseButton!.addEventListener('click', () => invoke('pause'));
@@ -94,14 +133,77 @@ function addDOMEventListeners() {
 }
 
 function addTauriListeners() {
-  listen<TrackInfo>('track-change', (event) => {
-    document.querySelectorAll('.playing').forEach((e) => e.classList.remove('playing'));
-    const elem = document.querySelector(`[data-index="${event.payload.index}"]`) as HTMLLIElement;
-    if (elem) elem.classList.add('playing');
+  // Queue
+  listen<EventPayload<TrackInfo[]>>('queue', (event) => {
+    console.log(event);
+
+    if (event.payload.success) {
+      let newQueue = event.payload.data.data;
+
+      if (newQueue.length === 0) {
+        currentTrack = null;
+      }
+
+      queue = newQueue;
+
+      renderQueue();
+    }
+  });
+
+  // Play
+  listen<EventPayload<{ index: number; track: TrackInfo }>>('play', (event) => {
+    console.log(event);
+
+    if (event.payload.success) {
+      currentTrack = event.payload.data.data.track;
+
+      renderQueue();
+
+      pauseButton!.disabled = false;
+      resumeButton!.disabled = true;
+    }
+  });
+
+  // Status
+  listen<EventPayload<String>>('status', (event) => {
+    console.log(event);
+
+    if (event.payload.success) {
+      pauseButton!.disabled = true;
+      resumeButton!.disabled = false;
+    }
+  });
+
+  // Position
+  listen<EventPayload<number>>('position', (event) => {
+    console.log(event);
+
+    if (event.payload.success) {
+      trackProgress!.value = event.payload.data.data.toString();
+      trackPosition!.textContent = formatTime(event.payload.data.data);
+    }
+  });
+
+  // Looped
+  listen<EventPayload<boolean>>('looped', (event) => {
+    console.log(event);
+
+    if (event.payload.success) {
+      trackLooped!.checked = event.payload.data.data;
+    }
+  });
+
+  // Volume
+  listen<EventPayload<number>>('volume', (event) => {
+    console.log(event);
+
+    if (event.payload.success) {
+      volumeSlider!.valueAsNumber = event.payload.data.data;
+    }
   });
 
   listen<TrackProgress>('track-progress', (event) => {
-    console.log('Track Progress:', event.payload);
+    // console.log('Track Progress:', event.payload);
     trackProgress!.value = event.payload.position.toString();
     trackProgress!.max = event.payload.duration.toString();
     trackPosition!.textContent = formatTime(event.payload.position);
@@ -127,4 +229,5 @@ window.addEventListener('DOMContentLoaded', () => {
   initWindow();
   addDOMEventListeners();
   addTauriListeners();
+  renderQueue();
 });

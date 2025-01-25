@@ -58,6 +58,12 @@ body {
   }
 }
 
+input[type='range'] {
+  &:disabled {
+    opacity: 50%;
+  }
+}
+
 .controls {
   display: flex;
   /* align-items: center; */
@@ -88,6 +94,18 @@ body {
   gap: 0.25rem;
 }
 
+button {
+  &:disabled {
+    .button-icon {
+      opacity: 25%;
+    }
+  }
+}
+
+.audio-control {
+  min-width: 23px;
+}
+
 .button-icon {
   width: 1rem;
   height: 1rem;
@@ -96,10 +114,6 @@ body {
   /* opacity: 50%; */
 
   filter: drop-shadow(1px 1px 0px #fff);
-}
-
-.audio-control {
-  min-width: 23px;
 }
 
 #audio-controls {

@@ -6,7 +6,6 @@ use souvlaki::{MediaMetadata, MediaPlayback};
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Duration;
-use tauri::Emitter;
 
 use crate::audio_player;
 use audio_player::{AudioError, AudioState, TrackInfo};
@@ -23,6 +22,10 @@ pub fn get_track_info_from_path(path: &str, index: usize) -> TrackInfo {
         let artist = tag
             .and_then(|t| t.artist().map(|s| s.into_owned()))
             .unwrap_or_else(|| "Unknown Title".to_string());
+
+        // let cover = tag
+        //     .and_then(|t| t.get_picture_type(PictureType::CoverFront))
+        //     .unwrap();
 
         let duration = tagged_file.properties().duration().as_secs();
 
@@ -52,7 +55,6 @@ pub fn play_track(
     state: &mut AudioState,
 ) -> Result<(), AudioError> {
     sink.clear();
-    println!("Playing track: {:?}", track_info);
 
     let file = File::open(&track_info.path)?;
     let source = Decoder::new(BufReader::new(file))?;
@@ -72,8 +74,6 @@ pub fn play_track(
             ..Default::default()
         })
         .unwrap();
-
-    state.handle.emit("track-change", &track_info).unwrap();
 
     state
         .controls
