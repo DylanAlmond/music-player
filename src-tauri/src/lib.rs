@@ -7,52 +7,64 @@ use audio_player::AudioPlayer;
 
 #[tauri::command]
 fn add_queue(state: State<AppState>, file_paths: Vec<String>) -> Result<(), String> {
-    state.audio_player.add_queue(file_paths)
+    state
+        .audio_player
+        .add_queue(file_paths)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn clear_queue(state: State<AppState>) -> Result<(), String> {
-    state.audio_player.clear_queue()
+    state.audio_player.clear_queue().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn play(state: State<AppState>, index: usize) -> Result<(), String> {
-    state.audio_player.play(index)
+    state.audio_player.play(index).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn pause(state: State<AppState>) -> Result<(), String> {
-    state.audio_player.pause()
+    state.audio_player.pause().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn resume(state: State<AppState>) -> Result<(), String> {
-    state.audio_player.resume()
+    state.audio_player.resume().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn prev(state: State<AppState>) -> Result<(), String> {
-    state.audio_player.prev()
+    state.audio_player.prev().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn next(state: State<AppState>) -> Result<(), String> {
-    state.audio_player.next()
+    state.audio_player.next().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_position(state: State<AppState>, position: u64) -> Result<(), String> {
-    state.audio_player.set_position(position)
+    state
+        .audio_player
+        .set_position(position)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_looped(state: State<AppState>, looped: bool) -> Result<(), String> {
-    state.audio_player.set_looped(looped)
+    state
+        .audio_player
+        .set_looped(looped)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn set_volume(state: State<AppState>, volume: f32) -> Result<(), String> {
-    state.audio_player.set_volume(volume)
+    state
+        .audio_player
+        .set_volume(volume)
+        .map_err(|e| e.to_string())
 }
 
 struct AppState {

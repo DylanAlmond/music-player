@@ -24,8 +24,23 @@ pub enum AudioError {
     #[error("Failed to decode audio file")]
     DecoderError(#[from] rodio::decoder::DecoderError),
 
+    #[error("Failed to seek to position")]
+    SeekError(#[from] rodio::source::SeekError),
+
     #[error("Mutex lock error")]
     LockError,
+
+    #[error("Queue is empty")]
+    EmptyQueueError,
+
+    #[error("Index out of bounds")]
+    OutOfBoundsError,
+
+    #[error("Failed to emit event")]
+    EmitError(#[from] tauri::Error),
+
+    #[error("Unknown error: {0}")]
+    Unknown(String),
 }
 
 pub struct AudioState {
@@ -64,7 +79,7 @@ enum CommandResponse {
 }
 
 #[derive(serde::Serialize, Clone)]
-pub struct Callback<T> {
+struct Callback<T> {
     success: bool,
     data: Option<T>,
     error: Option<String>,
@@ -82,7 +97,7 @@ pub struct TrackInfo {
 
 #[derive(Clone)]
 pub struct AudioPlayer {
-    pub sender: mpsc::Sender<AudioCommand>,
+    sender: mpsc::Sender<AudioCommand>,
 }
 
 impl AudioPlayer {
@@ -179,7 +194,7 @@ impl AudioPlayer {
     }
 
     fn handle_audio_command(command: AudioCommand, state: &mut AudioState, sink: &Sink) {
-        let (event_name, result): (&str, Result<CommandResponse, String>) = match command {
+        let (event_name, result): (&str, Result<CommandResponse, AudioError>) = match command {
             AudioCommand::Queue(file_paths) => {
                 let mut i: usize = state.queue.len();
                 for path in file_paths {
@@ -202,12 +217,12 @@ impl AudioPlayer {
                             }),
                         )
                     }
-                    Err(e) => ("play", Err(e.to_string())),
+                    Err(e) => ("play", Err(e)),
                 }
             }
             AudioCommand::Prev => {
                 let track = if state.queue.is_empty() {
-                    Err("queue is empty".to_string())
+                    Err(AudioError::EmptyQueueError)
                 } else {
                     if state.current_index > 0 && sink.get_pos().as_secs() < 5 {
                         state.current_index -= 1;
@@ -226,14 +241,14 @@ impl AudioPlayer {
                                 track: t,
                             }),
                         ),
-                        Err(e) => ("play", Err(e.to_string())),
+                        Err(e) => ("play", Err(e)),
                     },
                     Err(e) => ("play", Err(e)),
                 }
             }
             AudioCommand::Next => {
                 let track = if state.queue.is_empty() {
-                    Err("queue is empty".to_string())
+                    Err(AudioError::EmptyQueueError)
                 } else {
                     if state.current_index < state.queue.len() - 1 {
                         state.current_index += 1;
@@ -243,7 +258,7 @@ impl AudioPlayer {
                             state.current_index = 0;
                             Ok(state.queue[state.current_index].clone())
                         } else {
-                            Err("next index out of bounds".to_string())
+                            Err(AudioError::OutOfBoundsError)
                         }
                     }
                 };
@@ -257,7 +272,7 @@ impl AudioPlayer {
                                 track: t,
                             }),
                         ),
-                        Err(e) => ("play", Err(e.to_string())),
+                        Err(e) => ("play", Err(e)),
                     },
                     Err(e) => ("play", Err(e)),
                 }
@@ -273,7 +288,7 @@ impl AudioPlayer {
             }
             AudioCommand::Resume => {
                 if state.queue.is_empty() {
-                    ("play", Err("Queue is empty".to_string()))
+                    ("play", Err(AudioError::EmptyQueueError))
                 } else {
                     let playback_result = if sink.empty() {
                         match play_track(&state.queue[0].clone(), &sink, state) {
@@ -281,7 +296,7 @@ impl AudioPlayer {
                                 index: 0,
                                 track: state.queue[0].clone(),
                             }),
-                            Err(e) => Err(e.to_string()),
+                            Err(e) => Err(e),
                         }
                     } else {
                         sink.play();
@@ -306,7 +321,7 @@ impl AudioPlayer {
                         "position",
                         Ok(CommandResponse::Position(sink.get_pos().as_secs())),
                     ),
-                    Err(e) => ("position", Err(e.to_string())),
+                    Err(e) => ("position", Err(AudioError::SeekError(e))),
                 }
             }
             AudioCommand::SetLooped(looped) => {
@@ -342,13 +357,13 @@ impl AudioPlayer {
                 Callback::<CommandResponse> {
                     success: false,
                     data: None,
-                    error: Some(err),
+                    error: Some(err.to_string()),
                 },
             ),
         };
 
         if let Err(e) = emit_result {
-            eprintln!("Failed to emit event: {}", e);
+            eprintln!("{}", AudioError::EmitError(e));
         }
     }
 
@@ -386,79 +401,79 @@ impl AudioPlayer {
                     error: None,
                 },
             ) {
-                eprintln!("Error sending track progress: {}", e);
+                eprintln!("{}", AudioError::EmitError(e));
             }
             *last_emit_time = std::time::Instant::now();
         }
     }
 
-    pub fn add_queue(&self, file_paths: Vec<String>) -> Result<(), String> {
+    pub fn add_queue(&self, file_paths: Vec<String>) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Queue(file_paths)) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn clear_queue(&self) -> Result<(), String> {
+    pub fn clear_queue(&self) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Clear) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn play(&self, index: usize) -> Result<(), String> {
+    pub fn play(&self, index: usize) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Play(index)) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn pause(&self) -> Result<(), String> {
+    pub fn pause(&self) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Pause) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn resume(&self) -> Result<(), String> {
+    pub fn resume(&self) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Resume) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn next(&self) -> Result<(), String> {
+    pub fn next(&self) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Next) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn prev(&self) -> Result<(), String> {
+    pub fn prev(&self) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::Prev) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn set_position(&self, position: u64) -> Result<(), String> {
+    pub fn set_position(&self, position: u64) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::SetPosition(position)) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn set_looped(&self, looped: bool) -> Result<(), String> {
+    pub fn set_looped(&self, looped: bool) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::SetLooped(looped)) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 
-    pub fn set_volume(&self, volume: f32) -> Result<(), String> {
+    pub fn set_volume(&self, volume: f32) -> Result<(), AudioError> {
         match self.sender.send(AudioCommand::SetVolume(volume)) {
             Ok(_) => Ok(()),
-            Err(_) => Err(AudioError::LockError.to_string()),
+            Err(_) => Err(AudioError::LockError),
         }
     }
 }
