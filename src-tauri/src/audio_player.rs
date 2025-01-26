@@ -80,12 +80,6 @@ pub struct TrackInfo {
     pub path: String,
 }
 
-#[derive(serde::Serialize, Clone)]
-pub struct TrackProgress {
-    pub position: u64,
-    pub duration: u64,
-}
-
 #[derive(Clone)]
 pub struct AudioPlayer {
     pub sender: mpsc::Sender<AudioCommand>,
@@ -385,10 +379,11 @@ impl AudioPlayer {
 
         if !sink.is_paused() && !sink.empty() && last_emit_time.elapsed() >= interval {
             if let Err(e) = app_handle.emit(
-                "track-progress",
-                TrackProgress {
-                    position: sink.get_pos().as_secs(),
-                    duration: state.duration.unwrap_or(0),
+                "position",
+                Callback {
+                    success: true,
+                    data: Some(CommandResponse::Position(sink.get_pos().as_secs())),
+                    error: None,
                 },
             ) {
                 eprintln!("Error sending track progress: {}", e);
