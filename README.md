@@ -1,6 +1,6 @@
-# Music Player (Rust + Tauri)
+# Music Player
 
-This is a simple music player application built as a learning project for the Rust programming language. The app leverages **Tauri**, **Rodio**, **Souvlaki**, and **Lofty** on the Rust side, with a frontend powered by **HTML + TypeScript**, styled using **98.css** to give it a retro Windows 98 aesthetic.
+This music player application was developed as a learning project to explore the **Rust** programming language using **Tauri**. It utilizes **Rodio**, **Souvlaki**, and **Lofty** on the Rust backend for audio playback and metadata management, while the frontend is built with **HTML** + **TypeScript**, styled with **98.css** to achieve a nostalgic Windows 98 look.
 
 ![Music Player Screenshot](./preview.png)
 
